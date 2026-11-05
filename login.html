@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in · Hobbyshelf</title>
+  
+  <style>
+    :root {
+      --paper: #f7f1e6; --ink: #2b2118; --muted: #7a6a58; --accent: #8b4a2b;
+      --accent-dark: #723b21; --card: #fffdf8; --line: #e2d6c2;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Georgia, "Times New Roman", serif; background: var(--paper); color: var(--ink); min-height: 100vh; }
+    button, input { font: inherit; }
+    main { padding: clamp(16px, 4vw, 48px); }
+    .hidden { display: none !important; }
+
+    header.top {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+      padding: 14px clamp(16px, 4vw, 48px); border-bottom: 1px solid var(--line); background: var(--card);
+      position: sticky; top: 0; z-index: 5;
+    }
+    .brand { font-weight: bold; font-size: 1.3rem; color: var(--accent); text-decoration: none; }
+    .nav-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-block; background: var(--accent); color: #fff; border: 1px solid var(--accent);
+      border-radius: 999px; padding: 11px 22px; cursor: pointer; font-size: 1rem; text-decoration: none; text-align: center;
+    }
+    .btn:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+    .btn.ghost { background: transparent; color: var(--accent); }
+    .btn.ghost:hover { background: #f1e4d3; }
+    .btn.small { padding: 7px 14px; font-size: 0.9rem; }
+    .btn.full { width: 100%; margin-top: 22px; }
+
+    .auth-card {
+      max-width: 420px; margin: 40px auto; background: var(--card); border: 1px solid var(--line);
+      border-radius: 16px; padding: 32px;
+    }
+    .auth-card h2 { margin: 0 0 6px; }
+    .auth-card .sub { color: var(--muted); margin: 0 0 20px; }
+    label { display: block; font-size: 0.9rem; color: var(--muted); margin: 14px 0 6px; }
+    input[type="text"], input[type="email"], input[type="password"] {
+      width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
+    }
+    input:focus { outline: 2px solid #e8c9a6; border-color: var(--accent); }
+    .switch { font-size: 0.95rem; color: var(--muted); margin-top: 18px; text-align: center; }
+    .switch a { color: var(--accent); }
+    .fine { font-size: 0.85rem; color: var(--muted); margin-top: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="auth-card">
+    <h2>Welcome back</h2>
+    <p class="sub">Log in to see your shelf.</p>
+
+    <form id="login-form">
+      <label for="l-email">Email</label>
+      <input type="email" id="l-email" required autocomplete="email">
+      <label for="l-pass">Password</label>
+      <input type="password" id="l-pass" required minlength="6" autocomplete="current-password">
+      <button class="btn full" type="submit">Log in</button>
+    </form>
+
+    <p class="switch">New here? <a href="signup.html">Create an account</a></p>
+    <p class="fine">Accounts aren't connected yet. Any details will get you in for now.</p>
+  </div>
+</main>
+
+<script>
+  /* ---------- Shared helpers and storage ---------- */
+  const $ = (selector) => document.querySelector(selector);
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function link(text, href, className) {
+    const a = el('a', className, text);
+    a.href = href;
+    return a;
+  }
+
+  function readJSON(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const Session = {
+    KEY: 'hobbyshelf.user',
+    get() { return readJSON(this.KEY, null); },
+    start(user) { localStorage.setItem(this.KEY, JSON.stringify(user)); },
+    end() { localStorage.removeItem(this.KEY); }
+  };
+
+  /* ---------- Header ---------- */
+  function renderHeader() {
+    const host = $('#site-header');
+    if (!host) return;
+
+    const user = Session.get();
+    const header = el('header', 'top');
+    const right = el('div', 'nav-right');
+
+    if (user) {
+      const signOut = el('button', 'btn ghost small', 'Sign out');
+      signOut.type = 'button';
+      signOut.addEventListener('click', () => {
+        Session.end();
+        location.href = 'index.html';
+      });
+      right.append(el('span', 'who', user.name), link('My shelf', 'shelf.html', 'btn small'), signOut);
+    } else {
+      right.append(
+        link('Log in', 'login.html', 'btn ghost small'),
+        link('Sign up', 'signup.html', 'btn small')
+      );
+    }
+
+    header.append(link('Hobbyshelf', 'index.html', 'brand'), right);
+    host.replaceChildren(header);
+  }
+  renderHeader();
+
+  /* ---------- Log in ---------- */
+  if (Session.get()) location.replace('shelf.html');
+
+  // Accounts aren't connected yet, so any details log you in for now.
+  $('#login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = $('#l-email').value.trim();
+    Session.start({ email, name: email.split('@')[0] });
+    location.href = 'shelf.html';
+  });
+</script>
+</body>
+</html>
