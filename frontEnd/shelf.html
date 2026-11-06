@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Bookshelf · Hobbyshelf</title>
+  <link rel="stylesheet" href="./css/style.css"/>
+  <style>
+/* Bookshelf page */
+.shelf-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.shelf-head h1 { margin: 0; font-size: 1.8rem; }
+.count { color: var(--muted); font-size: 0.95rem; }
+.empty-msg { text-align: center; color: var(--muted); margin: 18px 0 8px; line-height: 1.6; }
+
+.add-panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  margin: 18px 0 26px;
+  max-width: 720px;
+}
+.add-panel h2 { margin: 0 0 4px; font-size: 1.2rem; }
+.add-panel .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.form-grid .wide { grid-column: 1 / -1; }
+.photo-row { display: flex; gap: 14px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.photo-preview {
+  width: 70px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 4px;
+  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.25);
+}
+.panel-actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+
+/* Shelf and books */
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  background: linear-gradient(#e7d3b7, #dcc3a2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.slot {
+  height: 210px;
+  padding: 0 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 14px solid var(--wood);
+  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.08);
+}
+.slot.empty { background: transparent; }
+
+.book {
+  position: relative;
+  width: 110px;
+  height: 165px;
+  border-radius: 3px 6px 6px 3px;
+  overflow: hidden;
+  box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
+  background: #fff;
+}
+.book img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.book .fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px;
+  color: #fff;
+  background: linear-gradient(135deg, #7a3e2a, #4a2a1c);
+  font-size: 0.85rem;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.book .fallback small { opacity: 0.75; margin-top: 6px; font-size: 0.75rem; }
+.book .remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.85;
+}
+.book .remove:hover { opacity: 1; }
+
+@media (max-width: 560px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .shelf { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .slot { height: 190px; }
+  .book { width: 92px; height: 138px; }
+}
+
+</style>
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<main>
+  <div class="shelf-head">
+    <div>
+      <h1>My Bookshelf</h1>
+      <div class="count" id="count"></div>
+    </div>
+    <button class="btn" id="add-toggle" type="button">+ Add a book</button>
+  </div>
+
+  <div id="add-panel" class="add-panel hidden">
+    <h2>Add a book</h2>
+    <p class="hint">Type the details, or upload a photo of the cover. A photo is used as the cover as-is.</p>
+    <form id="add-form">
+      <div class="form-grid">
+        <div>
+          <label for="b-title">Title *</label>
+          <input type="text" id="b-title" required>
+        </div>
+        <div>
+          <label for="b-author">Author</label>
+          <input type="text" id="b-author">
+        </div>
+        <div class="wide">
+          <label for="b-isbn">ISBN (optional, helps find the right cover)</label>
+          <input type="text" id="b-isbn" inputmode="numeric">
+        </div>
+      </div>
+
+      <div class="photo-row">
+        <div>
+          <label for="b-photo" style="margin-top:0">Or upload a photo of the cover</label>
+          <input type="file" id="b-photo" accept="image/*" capture="environment">
+        </div>
+        <img id="photo-preview" class="photo-preview hidden" alt="Cover preview">
+      </div>
+
+      <div class="panel-actions">
+        <button class="btn" type="submit">Add to shelf</button>
+        <button class="btn ghost" type="button" id="add-cancel">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <p class="empty-msg" id="empty-msg">Your shelf is empty. Add your first book to get started.</p>
+  <div class="shelf" id="shelf"></div>
+</main>
+
+<script>
+// Helpers and browser storage shared by every page.
+
+const $ = (selector) => document.querySelector(selector);
+
+// Creates an element with an optional class and text.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function link(text, href, className) {
+  const a = el('a', className, text);
+  a.href = href;
+  return a;
+}
+
+function readJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+// The logged-in user ({ email, name }), or null.
+const Session = {
+  KEY: 'hobbyshelf.user',
+  get() { return readJSON(this.KEY, null); },
+  start(user) { localStorage.setItem(this.KEY, JSON.stringify(user)); },
+  end() { localStorage.removeItem(this.KEY); }
+};
+
+// Each user's books, stored under their email.
+const BookStore = {
+  key(email) { return 'hobbyshelf.books.' + email; },
+  all(email) { return readJSON(this.key(email), []); },
+  save(email, books) {
+    try {
+      localStorage.setItem(this.key(email), JSON.stringify(books));
+      return true;
+    } catch {
+      return false; // storage is full, usually from very large photos
+    }
+  }
+};
+
+</script>
+<script>
+// Builds the shared header into any page that has <div id="site-header">.
+
+function renderHeader() {
+  const host = $('#site-header');
+  if (!host) return;
+
+  const user = Session.get();
+  const header = el('header', 'top');
+  const right = el('div', 'nav-right');
+
+  if (user) {
+    const signOut = el('button', 'btn ghost small', 'Sign out');
+    signOut.type = 'button';
+    signOut.addEventListener('click', () => {
+      Session.end();
+      location.href = 'index.html';
+    });
+    right.append(el('span', 'who', user.name), link('My shelf', 'shelf.html', 'btn small'), signOut);
+  } else {
+    right.append(
+      link('Log in', 'login.html', 'btn ghost small'),
+      link('Sign up', 'login.html?mode=signup', 'btn small')
+    );
+  }
+
+  header.append(link('Hobbyshelf', 'index.html', 'brand'), right);
+  host.replaceChildren(header);
+}
+
+renderHeader();
+
+</script>
+<script>
+// Finding book covers and reading uploaded photos.
+
+// Resolves to the URL if it loads as an image, otherwise null.
+function imageExists(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(url);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+// Tries the ISBN first, then searches Open Library by title and author.
+async function findCover({ title, author, isbn }) {
+  try {
+    if (isbn) {
+      const clean = isbn.replace(/[^0-9Xx]/g, '');
+      const found = await imageExists(`https://covers.openlibrary.org/b/isbn/${clean}-L.jpg?default=false`);
+      if (found) return found;
+    }
+    const params = new URLSearchParams({ title, limit: '1' });
+    if (author) params.set('author', author);
+    const res = await fetch('https://openlibrary.org/search.json?' + params);
+    const data = await res.json();
+    const coverId = data.docs?.[0]?.cover_i;
+    if (coverId) return await imageExists(`https://covers.openlibrary.org/b/id/${coverId}-L.jpg`);
+  } catch (err) {
+    console.warn('Cover lookup failed', err);
+  }
+  return null;
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+</script>
+<script>
+// Bookshelf page: add books by typing details or uploading a cover photo.
+
+const user = Session.get();
+if (user) {
+  initShelf(user);
+} else {
+  location.replace('login.html');
+}
+
+function initShelf(user) {
+  let books = BookStore.all(user.email);
+  const pending = new Set(); // ids of books still looking up a cover
+
+  function persist() {
+    if (!BookStore.save(user.email, books)) {
+      alert('Your shelf is too full to save. Try smaller photos.');
+    }
+  }
+
+  /* ---------- Rendering ---------- */
+
+  function render() {
+    const shelf = $('#shelf');
+    shelf.replaceChildren();
+    $('#empty-msg').classList.toggle('hidden', books.length > 0);
+    $('#count').textContent = books.length === 0
+      ? 'No books yet'
+      : `${books.length} ${books.length === 1 ? 'book' : 'books'}`;
+
+    if (books.length === 0) {
+      // Empty boards so the page still looks like a shelf
+      for (let i = 0; i < 4; i++) shelf.append(makeSlot(null));
+    } else {
+      books.forEach((book) => shelf.append(makeSlot(makeBook(book))));
+    }
+  }
+
+  function makeSlot(content) {
+    const slot = el('div', content ? 'slot' : 'slot empty');
+    if (content) slot.append(content);
+    return slot;
+  }
+
+  function makeBook(book) {
+    const node = el('div', 'book');
+    node.title = book.author ? `${book.title} by ${book.author}` : book.title;
+
+    if (book.cover) {
+      const img = el('img');
+      img.src = book.cover;
+      img.alt = book.title;
+      node.append(img);
+    } else {
+      const searching = pending.has(book.id);
+      const fallback = el('div', 'fallback');
+      fallback.append(el('span', '', searching ? 'Finding cover…' : book.title));
+      if (!searching && book.author) fallback.append(el('small', '', book.author));
+      node.append(fallback);
+    }
+
+    const remove = el('button', 'remove', '×');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `Remove ${book.title}`);
+    remove.addEventListener('click', () => {
+      books = books.filter((b) => b !== book);
+      persist();
+      render();
+    });
+    node.append(remove);
+
+    return node;
+  }
+
+  /* ---------- Add book panel ---------- */
+
+  function openPanel(open) {
+    $('#add-panel').classList.toggle('hidden', !open);
+    $('#add-toggle').classList.toggle('hidden', open);
+  }
+
+  function closePanel() {
+    $('#add-form').reset();
+    setPreview(null);
+    openPanel(false);
+  }
+
+  function setPreview(file) {
+    const img = $('#photo-preview');
+    if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    if (file) {
+      img.src = URL.createObjectURL(file);
+      img.classList.remove('hidden');
+    } else {
+      img.removeAttribute('src');
+      img.classList.add('hidden');
+    }
+  }
+
+  async function addBook(event) {
+    event.preventDefault();
+    const details = {
+      title: $('#b-title').value.trim(),
+      author: $('#b-author').value.trim(),
+      isbn: $('#b-isbn').value.trim()
+    };
+    if (!details.title) return;
+
+    const file = $('#b-photo').files[0];
+    const book = { id: Date.now() + Math.random(), ...details, cover: null };
+
+    books.push(book);
+    pending.add(book.id);
+    persist();
+    closePanel();
+    render();
+
+    try {
+      // An uploaded photo is the cover; typed entries look one up.
+      book.cover = file ? await readFileAsDataURL(file) : await findCover(details);
+    } finally {
+      pending.delete(book.id);
+      persist();
+      render();
+    }
+  }
+
+  $('#add-toggle').addEventListener('click', () => openPanel(true));
+  $('#add-cancel').addEventListener('click', closePanel);
+  $('#b-photo').addEventListener('change', (e) => setPreview(e.target.files[0]));
+  $('#add-form').addEventListener('submit', addBook);
+
+  render();
+}
+
+</script>
+</body>
+</html>
