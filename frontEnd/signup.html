@@ -4,9 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign up · Hobbyshelf</title>
-  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="../css/styles.css"/>
   <style>
-    
     .btn.full { width: 100%; margin-top: 22px; }
 
     .auth-card {
@@ -40,13 +39,13 @@
       <button class="btn full" type="submit">Sign up</button>
     </form>
 
-    <p class="switch">Already have an account? <a href="login.html">Log in</a></p>
+    <p class="switch">Already have an account? <a href="./login.html">Log in</a></p>
     <p class="fine">Accounts aren't connected yet. Any details will get you in for now.</p>
   </div>
 </main>
 
 <script>
-  /* ---------- Shared helpers and storage ---------- */
+  /* ---------- Shared helpers ---------- */
   const $ = (selector) => document.querySelector(selector);
 
   function el(tag, className, text) {
@@ -78,6 +77,28 @@
     end() { localStorage.removeItem(this.KEY); }
   };
 
+
+  async function api(method, path, body) {
+    const headers = {};
+    const user = Session.get();
+    if (user) headers['X-User-Id'] = String(user.id);
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+    const res = await fetch(path, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    if (res.status === 401) {
+      Session.end();
+      location.replace('./login.html');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+
   /* ---------- Header ---------- */
   function renderHeader() {
     const host = $('#site-header');
@@ -92,31 +113,59 @@
       signOut.type = 'button';
       signOut.addEventListener('click', () => {
         Session.end();
-        location.href = 'index.html';
+        location.href = './landingPage.html';
       });
-      right.append(el('span', 'who', user.name), link('My shelf', 'shelf.html', 'btn small'), signOut);
+      right.append(el('span', 'who', user.name), link('My shelf', './shelf.html', 'btn small'), signOut);
     } else {
       right.append(
-        link('Log in', 'login.html', 'btn ghost small'),
-        link('Sign up', 'signup.html', 'btn small')
+        link('Log in', './login.html', 'btn ghost small'),
+        link('Sign up', './signup.html', 'btn small')
       );
     }
 
-    header.append(link('Hobbyshelf', 'index.html', 'brand'), right);
+    header.append(link('Hobbyshelf', './landingPage.html', 'brand'), right);
     host.replaceChildren(header);
   }
   renderHeader();
 
-  /* ---------- Sign up ---------- */
-  if (Session.get()) location.replace('shelf.html');
+  // Calls the Hobbyshelf API. Throws an Error with the server's message on failure.
+  async function api(method, path, body) {
+    const headers = {};
+    const user = Session.get();
+    if (user) headers['X-User-Id'] = String(user.id);
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  // Accounts aren't connected yet, so the details are only saved in this browser.
-  $('#signup-form').addEventListener('submit', (e) => {
+    const res = await fetch(path, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    if (res.status === 401) {
+      Session.end();
+      location.replace('login.html');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+
+  /* ---------- Sign up ---------- */
+  if (Session.get()) location.replace('./shelf.html');
+
+  // Accounts aren't connected yet, so the details are only used to create the account on the server.
+  $('#signup-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = $('#s-name').value.trim();
-    const email = $('#s-email').value.trim();
-    Session.start({ email, name });
-    location.href = 'shelf.html';
+    try {
+      const user = await api('POST', '/api/login', {
+        email: $('#s-email').value.trim(),
+        name: $('#s-name').value.trim()
+      });
+      Session.start(user);
+      location.href = './shelf.html';
+    } catch (err) {
+      alert(err.message);
+    }
   });
 </script>
 </body>

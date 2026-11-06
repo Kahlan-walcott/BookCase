@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hobbyshelf</title>
-<link rel="stylesheet" href="./css/style.css"/>
-<style>
+  <link rel="stylesheet" href="../css/styles.css"/>
+  <style>
 /* Landing page */
 .hero { max-width: 880px; margin: 40px auto 0; text-align: center; }
 .hero h1 { font-size: clamp(2.1rem, 6vw, 3.5rem); line-height: 1.1; margin: 0 0 18px; }
@@ -40,8 +40,8 @@
       whenever you want to share it.
     </p>
     <div class="cta">
-      <a class="btn" id="cta-start" href="login.html">Get started</a>
-      <a class="btn ghost" id="cta-login" href="login.html">I already have an account</a>
+      <a class="btn" id="cta-start" href="./signup.html">Get started</a>
+      <a class="btn ghost" id="cta-login" href="./login.html">I already have an account</a>
     </div>
   </div>
 
@@ -132,17 +132,17 @@ function renderHeader() {
     signOut.type = 'button';
     signOut.addEventListener('click', () => {
       Session.end();
-      location.href = 'index.html';
+      location.href = './landingPage.html';
     });
-    right.append(el('span', 'who', user.name), link('My shelf', 'shelf.html', 'btn small'), signOut);
+    right.append(el('span', 'who', user.name), link('My shelf', './shelf.html', 'btn small'), signOut);
   } else {
     right.append(
-      link('Log in', 'login.html', 'btn ghost small'),
-      link('Sign up', 'login.html?mode=signup', 'btn small')
+      link('Log in', './login.html', 'btn ghost small'),
+      link('Sign up', './signup.html', 'btn small')
     );
   }
 
-  header.append(link('Hobbyshelf', 'index.html', 'brand'), right);
+  header.append(link('Hobbyshelf', './landingPage.html', 'brand'), right);
   host.replaceChildren(header);
 }
 
