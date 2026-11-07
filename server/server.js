@@ -3,13 +3,20 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { users, books } = require('./db');
+const { users, books } = require('../db/database.js');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'frontEnd');
+const ROOT_DIR = path.join(__dirname, '..');
 const MAX_BODY = 10 * 1024 * 1024; // room for photo covers sent as data URLs
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
+const MIME = { 
+  '.html': 'text/html; charset=utf-8', 
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.png': 'image/png', 
+  '.jpg': 'image/jpeg', 
+  '.svg': 'image/svg+xml' };
 
 function send(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -97,11 +104,18 @@ async function handleApi(req, res, url) {
   send(res, 404, { error: 'Not found' });
 }
 
+// Maps a URL path to a file on disk.
+// Pages come from frontEnd/, stylesheets from css/ at the project root.
+function resolveStaticFile(pathname) {
+  if (pathname === '/') return path.join(PUBLIC_DIR, 'landingPage.html');
+  const name = path.basename(pathname);
+  if (pathname.startsWith('/css/')) return path.join(ROOT_DIR, 'css', name);
+  return path.join(PUBLIC_DIR, name);
+}
+
 function serveStatic(req, res, url) {
-  const name = url.pathname === '/' ? 'index.html' : path.basename(url.pathname);
-  const file = path.join(PUBLIC_DIR, name);
-  // Only serve files that sit directly in /frontEnd
-  if (path.dirname(file) !== PUBLIC_DIR || !fs.existsSync(file)) {
+  const file = resolveStaticFile(url.pathname);
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     return res.end('Not found');
   }
