@@ -4,9 +4,9 @@
   "private": true,
   "description": "Hobbyshelf API and static server (requires Node 22.5 or newer)",
   "scripts": {
-    "start": "node server.js",
-    "seed": "node seed.js",
-    "seed:reset": "node seed.js --reset"
+    "start": "node server/server.js",
+    "seed": "node server/demoData.js",
+    "seed:reset": "node server/demoData.js --reset"
   },
   "engines": { "node": ">=22.5" }
 }
