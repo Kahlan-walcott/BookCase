@@ -1,7 +1,8 @@
 // Fills the database with a demo account and sample books for testing.
-// Run with: node server/seed.js          (adds the demo data if it isn't there yet)
-//           node server/seed.js --reset  (clears the demo account's books first)
-const { db, users, books } = require('./db');
+// Run from the BookCase folder:
+//   node server/demoData.js          (adds the demo data if it isn't there yet)
+//   node server/demoData.js --reset  (clears the demo account's books first)
+const { db, users, books } = require('../db/database.js');
 
 const DEMO = { email: 'demo@hobbyshelf.test', name: 'Demo Reader' };
 
