@@ -22,6 +22,7 @@
 }
 .add-panel h2 { margin: 0 0 4px; font-size: 1.2rem; }
 .add-panel .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }
+.optional { font-size: 0.8rem; color: var(--muted); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .form-grid .wide { grid-column: 1 / -1; }
 .photo-row { display: flex; gap: 14px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
@@ -32,7 +33,22 @@
   border-radius: 4px;
   box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.25);
 }
+.kind-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; font-size: 0.95rem; }
+.kind-row label { margin: 0; color: var(--ink); cursor: pointer; }
 .panel-actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.status { min-height: 1.4em; color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
+
+/* Review list for books found in a shelf photo */
+.review-row { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+.review-row input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+.review-row input[type="checkbox"] { width: 18px; height: 18px; }
 
 /* Shelf and books */
 .shelf {
@@ -97,12 +113,12 @@
 
 @media (max-width: 560px) {
   .form-grid { grid-template-columns: 1fr; }
+  .review-row { grid-template-columns: auto 1fr; }
   .shelf { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
   .slot { height: 190px; }
   .book { width: 92px; height: 138px; }
 }
-
-</style>
+  </style>
 </head>
 <body>
 
@@ -114,41 +130,58 @@
       <h1>My Bookshelf</h1>
       <div class="count" id="count"></div>
     </div>
-    <button class="btn" id="add-toggle" type="button">+ Add a book</button>
+    <button class="btn" id="add-toggle" type="button">+ Add books</button>
   </div>
 
   <div id="add-panel" class="add-panel hidden">
-    <h2>Add a book</h2>
-    <p class="hint">Type the details, or upload a photo of the cover. A photo is used as the cover as-is.</p>
+    <h2>Add books</h2>
+    <p class="hint">Upload a photo of a book cover or a whole shelf, or type the details yourself.</p>
     <form id="add-form">
-      <div class="form-grid">
+      <div class="photo-row">
         <div>
-          <label for="b-title">Title *</label>
-          <input type="text" id="b-title" required>
+          <label for="b-photo" style="margin-top:0">Photo</label>
+          <input type="file" id="b-photo" accept="image/*" capture="environment">
+        </div>
+        <img id="photo-preview" class="photo-preview hidden" alt="Photo preview">
+      </div>
+
+      <div class="kind-row">
+        <label><input type="radio" name="photo-kind" value="cover" checked> One book cover</label>
+        <label><input type="radio" name="photo-kind" value="shelf"> A whole shelf</label>
+      </div>
+
+      <div class="form-grid" style="margin-top:14px">
+        <div>
+          <label for="b-title">Title <span class="optional">(not needed with a photo)</span></label>
+          <input type="text" id="b-title">
         </div>
         <div>
           <label for="b-author">Author</label>
           <input type="text" id="b-author">
         </div>
         <div class="wide">
-          <label for="b-isbn">ISBN (optional, helps find the right cover)</label>
+          <label for="b-isbn">ISBN <span class="optional">(optional, helps find the right cover)</span></label>
           <input type="text" id="b-isbn" inputmode="numeric">
         </div>
       </div>
 
-      <div class="photo-row">
-        <div>
-          <label for="b-photo" style="margin-top:0">Or upload a photo of the cover</label>
-          <input type="file" id="b-photo" accept="image/*" capture="environment">
-        </div>
-        <img id="photo-preview" class="photo-preview hidden" alt="Cover preview">
-      </div>
+      <p class="status" id="status"></p>
 
       <div class="panel-actions">
         <button class="btn" type="submit">Add to shelf</button>
         <button class="btn ghost" type="button" id="add-cancel">Cancel</button>
       </div>
     </form>
+  </div>
+
+  <div id="review" class="add-panel hidden">
+    <h2>Books found in your photo</h2>
+    <p class="hint" id="review-hint"></p>
+    <div id="review-list"></div>
+    <div class="panel-actions">
+      <button class="btn" type="button" id="review-add">Add to shelf</button>
+      <button class="btn ghost" type="button" id="review-cancel">Cancel</button>
+    </div>
   </div>
 
   <p class="empty-msg" id="empty-msg">Your shelf is empty. Add your first book to get started.</p>
@@ -202,7 +235,7 @@
     });
     if (res.status === 401) {
       Session.end();
-      location.replace('login.html');
+      location.replace('./login.html');
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
@@ -238,7 +271,152 @@
   }
   renderHeader();
 
-  /* ---------- Covers ---------- */
+  /* ---------- Free photo reading (runs in the browser) ---------- */
+  // Tesseract.js: free, open-source OCR. Open Library: free book catalog, no key needed.
+  const OCR_SCRIPT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+  let ocrWorkerPromise = null;
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if (window.Tesseract) return resolve();
+      const script = document.createElement('script');
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Could not load the photo reader. Check your internet connection.'));
+      document.head.append(script);
+    });
+  }
+
+  function getOcrWorker() {
+    if (!ocrWorkerPromise) {
+      ocrWorkerPromise = loadScript(OCR_SCRIPT)
+        .then(() => Tesseract.createWorker('eng'))
+        .catch((err) => {
+          ocrWorkerPromise = null; // allow a retry next time
+          throw err;
+        });
+    }
+    return ocrWorkerPromise;
+  }
+
+  // Returns the text lines OCR found, each with a confidence score from 0 to 100.
+  async function readLines(image) {
+    const worker = await getOcrWorker();
+    const { data } = await worker.recognize(image);
+    if (Array.isArray(data.lines) && data.lines.length) {
+      return data.lines.map((line) => ({ text: line.text, confidence: line.confidence }));
+    }
+    return data.text.split('\n').map((text) => ({ text, confidence: 70 }));
+  }
+
+  // Keeps lines that look like real words: confident, with enough letters, no duplicates.
+  function usableLines(lines) {
+    const seen = new Set();
+    return lines
+      .map((line) => ({
+        text: line.text.replace(/[|_~]+/g, ' ').replace(/\s+/g, ' ').trim(),
+        confidence: line.confidence ?? 70
+      }))
+      .filter((line) => line.confidence >= 50 && (line.text.match(/[A-Za-z]/g) || []).length >= 4)
+      .sort((a, b) => b.confidence - a.confidence)
+      .filter((line) => {
+        const key = line.text.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((line) => line.text);
+  }
+
+  // Share of the title's words (ignoring short words) that appear in the query text.
+  function titleMatchScore(query, title) {
+    const words = (text) => (text.toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => w.length >= 3);
+    const titleWords = words(title);
+    if (titleWords.length === 0) return 0;
+    const queryWords = new Set(words(query));
+    const found = titleWords.filter((w) => queryWords.has(w)).length;
+    return found / titleWords.length;
+  }
+
+  // Searches Open Library for a book matching the text. Returns null if nothing matches well.
+  async function lookupBook(query) {
+    try {
+      const params = new URLSearchParams({ q: query, limit: '5', fields: 'title,author_name,isbn' });
+      const res = await fetch('https://openlibrary.org/search.json?' + params);
+      if (!res.ok) return null;
+      const data = await res.json();
+
+      const best = (data.docs || [])
+        .map((doc) => ({ doc, score: titleMatchScore(query, doc.title || '') }))
+        .sort((a, b) => b.score - a.score)[0];
+      if (!best || best.score < 0.6) return null;
+
+      const isbns = best.doc.isbn || [];
+      return {
+        title: best.doc.title,
+        author: best.doc.author_name?.[0] || '',
+        isbn: isbns.find((i) => i.length === 13) || isbns[0] || '',
+        matched: true
+      };
+    } catch (err) {
+      console.warn('Catalog lookup failed', err);
+      return null;
+    }
+  }
+
+  // One cover photo: read the text, look up the best catalog match.
+  // If nothing matches, the most confident line is used as the title and the user can correct it.
+  async function readCover(image) {
+    const lines = usableLines(await readLines(image));
+    if (lines.length === 0) return {};
+    const match = await lookupBook(lines.slice(0, 4).join(' '));
+    if (match) return match;
+    return { title: lines[0], author: '', isbn: '', matched: false };
+  }
+
+  // A shelf photo: every readable line becomes a candidate book.
+  // Lines that match the catalog are checked by default; the rest are left for the user to decide.
+  async function readShelf(image, onStatus) {
+    const candidates = usableLines(await readLines(image)).slice(0, 15);
+    const results = [];
+    const seen = new Set();
+
+    for (let i = 0; i < candidates.length; i++) {
+      onStatus(`Checking ${i + 1} of ${candidates.length} possible books…`);
+      const match = await lookupBook(candidates[i]);
+      const book = match || { title: candidates[i], author: '', isbn: '', matched: false };
+      const key = book.title.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(book);
+      }
+    }
+    return results;
+  }
+
+  // Shrinks a photo so it reads quickly and uploads stay small. Returns a JPEG data URL.
+  function resizeImage(file, maxSide) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('That file is not an image this browser can read.'));
+      };
+      img.src = url;
+    });
+  }
+
+  // Tries the ISBN first, then searches Open Library by title and author.
   function imageExists(url) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -248,7 +426,6 @@
     });
   }
 
-  // Tries the ISBN first, then searches Open Library by title and author.
   async function findCover({ title, author, isbn }) {
     try {
       if (isbn) {
@@ -268,15 +445,6 @@
     return null;
   }
 
-  function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-  }
-
   /* ---------- Shelf page ---------- */
   const user = Session.get();
   if (user) {
@@ -288,7 +456,8 @@
   function initShelf() {
     let books = [];
     let loaded = false;
-    const pending = new Set(); // ids of books still saving or looking up a cover
+    let review = [];                      // books found in a shelf photo, awaiting confirmation
+    const pending = new Set();            // ids of books still saving or looking up a cover
 
     /* Rendering */
 
@@ -348,7 +517,7 @@
       return node;
     }
 
-    /* Add book panel */
+    /* Add panel */
 
     function openPanel(open) {
       $('#add-panel').classList.toggle('hidden', !open);
@@ -358,7 +527,12 @@
     function closePanel() {
       $('#add-form').reset();
       setPreview(null);
+      setStatus('');
       openPanel(false);
+    }
+
+    function setStatus(text) {
+      $('#status').textContent = text;
     }
 
     function setPreview(file) {
@@ -373,35 +547,164 @@
       }
     }
 
-    // A photo is saved as the cover; typed entries get a cover looked up afterwards.
-    async function addBook(event) {
+    // No photo: the title is required and one book is added.
+    // Cover photo: the book is read from the photo, and the photo becomes its cover.
+    // Shelf photo: every book found is listed for review first.
+    async function submitForm(event) {
       event.preventDefault();
-      const details = {
+      const typed = {
         title: $('#b-title').value.trim(),
         author: $('#b-author').value.trim(),
         isbn: $('#b-isbn').value.trim()
       };
-      if (!details.title) return;
-
       const file = $('#b-photo').files[0];
-      closePanel();
 
-      const placeholder = { id: 'tmp-' + Date.now(), ...details, cover: null };
-      let saved = null;
-      books.push(placeholder);
-      pending.add(placeholder.id);
-      render();
+      if (!file) {
+        if (!typed.title) return alert('Enter a title, or upload a photo of a cover or shelf.');
+        closePanel();
+        return addBooks([typed]);
+      }
+
+      const kind = document.querySelector('input[name="photo-kind"]:checked').value;
+      const submit = $('#add-form button[type="submit"]');
+      submit.disabled = true;
 
       try {
-        const cover = file ? await readFileAsDataURL(file) : null;
-        saved = await api('POST', '/api/books', { ...details, cover });
+        const photo = await resizeImage(file, 1600);
+
+        if (kind === 'cover') {
+          setStatus('Reading the cover…');
+          const found = await readCover(photo);
+          const item = {
+            title: typed.title || found.title || '',
+            author: typed.author || found.author || '',
+            isbn: typed.isbn || found.isbn || '',
+            cover: photo
+          };
+          if (!item.title) return alert('We could not read a title from that photo. Type one in and try again.');
+          closePanel();
+          return addBooks([item]);
+        }
+
+        setStatus('Reading the shelf…');
+        const found = await readShelf(photo, setStatus);
+        if (found.length === 0) {
+          return alert('We could not read any books in that photo. Try a closer, straighter picture, or type the titles.');
+        }
+        showReview(found);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        submit.disabled = false;
+        setStatus('');
+      }
+    }
+
+    /* Review step for shelf photos */
+
+    function showReview(found) {
+      review = found.map((book) => ({ ...book, keep: book.matched }));
+      openPanel(false);
+      $('#review').classList.remove('hidden');
+      const matched = found.filter((b) => b.matched).length;
+      $('#review-hint').textContent =
+        `${matched} matched a book in the catalog and are checked. Unchecked lines may be shelf labels or noise. Fix any titles before adding.`;
+      renderReview();
+    }
+
+    function renderReview() {
+      const list = $('#review-list');
+      list.replaceChildren();
+
+      review.forEach((item) => {
+        const row = el('div', 'review-row');
+
+        const check = el('input');
+        check.type = 'checkbox';
+        check.checked = item.keep;
+        check.setAttribute('aria-label', 'Add this book');
+        check.addEventListener('change', () => {
+          item.keep = check.checked;
+          updateReviewButton();
+        });
+
+        const title = el('input');
+        title.type = 'text';
+        title.value = item.title;
+        title.placeholder = 'Title';
+        title.addEventListener('input', () => { item.title = title.value; updateReviewButton(); });
+
+        const author = el('input');
+        author.type = 'text';
+        author.value = item.author;
+        author.placeholder = 'Author';
+        author.addEventListener('input', () => { item.author = author.value; });
+
+        row.append(check, title, author);
+        list.append(row);
+      });
+      updateReviewButton();
+    }
+
+    function updateReviewButton() {
+      const count = review.filter((b) => b.keep && b.title.trim()).length;
+      const button = $('#review-add');
+      button.disabled = count === 0;
+      button.textContent = count === 0 ? 'Nothing selected'
+        : `Add ${count} ${count === 1 ? 'book' : 'books'} to shelf`;
+    }
+
+    function closeReview() {
+      review = [];
+      $('#review').classList.add('hidden');
+      closePanel();
+    }
+
+    async function confirmReview() {
+      const items = review
+        .filter((b) => b.keep && b.title.trim())
+        .map((b) => ({ title: b.title.trim(), author: b.author.trim(), isbn: b.isbn || '' }));
+      closeReview();
+      await addBooks(items);
+    }
+
+    /* Saving books */
+
+    // Adds each item to the shelf one at a time. Items with a cover keep it;
+    // the others get a cover looked up from Open Library.
+    async function addBooks(items) {
+      const placeholders = items.map((item) => ({
+        id: 'tmp-' + Date.now() + Math.random(),
+        title: item.title,
+        author: item.author || '',
+        isbn: item.isbn || '',
+        cover: null
+      }));
+      books.push(...placeholders);
+      placeholders.forEach((p) => pending.add(p.id));
+      render();
+
+      for (let i = 0; i < items.length; i++) {
+        await saveBook(placeholders[i], items[i]);
+      }
+    }
+
+    async function saveBook(placeholder, item) {
+      let saved = null;
+      try {
+        saved = await api('POST', '/api/books', {
+          title: item.title,
+          author: item.author || '',
+          isbn: item.isbn || '',
+          cover: item.cover || null
+        });
         books[books.indexOf(placeholder)] = saved;
         pending.delete(placeholder.id);
         pending.add(saved.id);
         render();
 
         if (!saved.cover) {
-          const found = await findCover(details);
+          const found = await findCover(saved);
           if (found) {
             await api('PATCH', `/api/books/${saved.id}`, { cover: found });
             saved.cover = found;
@@ -409,7 +712,7 @@
         }
       } catch (err) {
         books = books.filter((b) => b !== placeholder);
-        alert(err.message);
+        alert(`Could not add "${item.title}": ${err.message}`);
       } finally {
         pending.delete(placeholder.id);
         if (saved) pending.delete(saved.id);
@@ -417,10 +720,14 @@
       }
     }
 
+    /* Wiring */
+
     $('#add-toggle').addEventListener('click', () => openPanel(true));
     $('#add-cancel').addEventListener('click', closePanel);
     $('#b-photo').addEventListener('change', (e) => setPreview(e.target.files[0]));
-    $('#add-form').addEventListener('submit', addBook);
+    $('#add-form').addEventListener('submit', submitForm);
+    $('#review-add').addEventListener('click', confirmReview);
+    $('#review-cancel').addEventListener('click', closeReview);
 
     /* Load the user's books */
     render();
@@ -429,7 +736,6 @@
       .catch((err) => alert(err.message))
       .finally(() => { loaded = true; render(); });
   }
-
 </script>
 </body>
 </html>
